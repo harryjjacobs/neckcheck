@@ -1,9 +1,10 @@
+mod tone;
+
 extern crate nokhwa;
 extern crate rustface;
 
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
 
 use thiserror::Error;
 
@@ -19,12 +20,7 @@ use imageproc::drawing::draw_hollow_rect_mut;
 use imageproc::rect::Rect;
 
 use console::Term;
-
-use winit::{
-    event::{Event, WindowEvent},
-    event_loop::EventLoop,
-    window::{Fullscreen, WindowBuilder},
-};
+use tone::play_tone;
 
 #[derive(Error, Debug, Clone)]
 pub enum WebCamError {
@@ -65,6 +61,7 @@ impl WebCam {
     // Captures a single frame from the camera
     pub fn capture(&mut self) -> Result<RgbImage, WebCamError> {
         if !self.camera.is_stream_open() {
+            println!("Opening Camera Stream");
             let _ = self.open();
         }
 
@@ -84,7 +81,9 @@ impl WebCam {
             let _ = self.close();
         }
 
-        return Ok(decoded);
+        return Ok(
+            RgbImage::from_raw(decoded.width(), decoded.height(), decoded.into_raw()).unwrap(),
+        );
     }
 
     fn open(&mut self) -> Result<(), WebCamError> {
@@ -172,17 +171,17 @@ impl NeckCheck {
         }
     }
 
-    pub fn with_calibration(
-        webcam: WebCam,
-        detector: FaceDetector,
-        calibration: NeckCheckCalibration,
-    ) -> NeckCheck {
-        NeckCheck {
-            webcam,
-            detector,
-            calibration: Some(calibration),
-        }
-    }
+    // pub fn with_calibration(
+    //     webcam: WebCam,
+    //     detector: FaceDetector,
+    //     calibration: NeckCheckCalibration,
+    // ) -> NeckCheck {
+    //     NeckCheck {
+    //         webcam,
+    //         detector,
+    //         calibration: Some(calibration),
+    //     }
+    // }
 
     pub fn calibrate(&mut self) {
         let term = Term::stdout();
@@ -247,40 +246,19 @@ fn main() {
     )));
     neckcheck.lock().unwrap().calibrate();
 
-    let is_too_close = std::sync::Arc::new(std::sync::Mutex::new(false));
-
-    // Create the GUI event loop
-    let event_loop = EventLoop::new().unwrap();
-    let window = WindowBuilder::new()
-        .with_fullscreen(Some(Fullscreen::Borderless(None)))
-        .build(&event_loop)
-        .unwrap();
-
     // Create a thread for proximity checking
     let proximity_thread = {
-        let is_too_close = is_too_close.clone();
         thread::spawn(move || {
             loop {
                 let is_close = !neckcheck.lock().unwrap().check();
-                *is_too_close.lock().unwrap() = is_close;
-                window.set_visible(is_close);
                 if is_close {
                     println!("Too close!");
+                    play_tone(1.0);
                 }
                 // thread::sleep(Duration::from_secs(1));
             }
         })
     };
-
-    let _ = event_loop.run(|event, elwt| {
-        match event {
-            Event::WindowEvent {
-                event: WindowEvent::CloseRequested,
-                ..
-            } => elwt.exit(),
-            _ => (),
-        }
-    });
 
     // Wait for the proximity checking thread to finish
     proximity_thread.join().unwrap();
