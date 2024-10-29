@@ -1,4 +1,4 @@
-# Neckcheck
+# neckcheck
 
 Designed to help fix this:
 
